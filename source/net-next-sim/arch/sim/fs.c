@@ -11,7 +11,7 @@
 
 #include "sim-assert.h"
 
-DEFINE_BRLOCK(vfsmount_lock);
+__cacheline_aligned_in_smp DEFINE_SEQLOCK(mount_lock);
 struct super_block;
 
 struct backing_dev_info default_backing_dev_info = {
@@ -213,6 +213,25 @@ int generic_pipe_buf_confirm(struct pipe_inode_info *pipe, struct pipe_buffer *b
 	  return 0;
 }
 
+void generic_pipe_buf_release(struct pipe_inode_info *pipe,
+                              struct pipe_buffer *buf)
+{
+  sim_assert (false);
+  return;
+}
+
+static int generic_pipe_buf_nosteal(struct pipe_inode_info *pipe,
+                                    struct pipe_buffer *buf)
+{
+  return 1;
+}
+
+void generic_pipe_buf_get(struct pipe_inode_info *pipe, struct pipe_buffer *buf)
+{
+  sim_assert (false);
+  return;
+}
+
 int proc_nr_inodes(ctl_table *table, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	  sim_assert (false);
@@ -246,3 +265,11 @@ unsigned int nr_free_buffer_pages(void)
 {
 	return 1024;
 }
+
+const struct pipe_buf_operations nosteal_pipe_buf_ops = {
+	.can_merge = 0,
+	.confirm = generic_pipe_buf_confirm,
+	.release = generic_pipe_buf_release,
+	.steal = generic_pipe_buf_nosteal,
+	.get = generic_pipe_buf_get,
+};

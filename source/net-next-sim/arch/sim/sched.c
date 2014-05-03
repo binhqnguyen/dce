@@ -36,8 +36,8 @@ struct SimTask *sim_task_create (void *private, unsigned long pid)
   struct pid *kpid = sim_malloc (sizeof (struct pid));
   if (!kpid) return NULL;
   kpid->numbers[0].nr = pid;
-  cred->fsuid = 0;
-  cred->fsgid = 0;
+  cred->fsuid = make_kuid (current_user_ns (), 0);
+  cred->fsgid = make_kgid (current_user_ns (), 0);
   cred->user = user;
   atomic_set (&cred->usage, 1);
   info->task = &task->kernel_task;
@@ -47,7 +47,7 @@ struct SimTask *sim_task_create (void *private, unsigned long pid)
   ns->uts_ns = 0;
   ns->ipc_ns = 0;
   ns->mnt_ns = 0;
-  ns->pid_ns = 0;
+  ns->pid_ns_for_children = 0;
   ns->net_ns = &init_net;
   task->kernel_task.cred = cred;
   task->kernel_task.pid = pid;
@@ -304,4 +304,20 @@ int idle_cpu (int cpu)
   // we are never idle: we call this from rcutiny.c and the answer
   // does not matter, really.
   return 0;
+}
+
+unsigned long long __attribute__((weak)) sched_clock(void)
+{
+	return (unsigned long long)(jiffies - INITIAL_JIFFIES)
+					* (NSEC_PER_SEC / HZ);
+}
+
+u64 local_clock(void)
+{
+	return sched_clock();
+}
+
+void __sched schedule_preempt_disabled(void)
+{
+  return;
 }

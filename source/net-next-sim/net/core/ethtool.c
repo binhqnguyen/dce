@@ -81,7 +81,10 @@ static const char netdev_features_strings[NETDEV_FEATURE_COUNT][ETH_GSTRING_LEN]
 	[NETIF_F_TSO6_BIT] =             "tx-tcp6-segmentation",
 	[NETIF_F_FSO_BIT] =              "tx-fcoe-segmentation",
 	[NETIF_F_GSO_GRE_BIT] =		 "tx-gre-segmentation",
+	[NETIF_F_GSO_IPIP_BIT] =	 "tx-ipip-segmentation",
+	[NETIF_F_GSO_SIT_BIT] =		 "tx-sit-segmentation",
 	[NETIF_F_GSO_UDP_TUNNEL_BIT] =	 "tx-udp_tnl-segmentation",
+	[NETIF_F_GSO_MPLS_BIT] =	 "tx-mpls-segmentation",
 
 	[NETIF_F_FCOE_CRC_BIT] =         "tx-checksum-fcoe-crc",
 	[NETIF_F_SCTP_CSUM_BIT] =        "tx-checksum-sctp",
@@ -93,6 +96,8 @@ static const char netdev_features_strings[NETDEV_FEATURE_COUNT][ETH_GSTRING_LEN]
 	[NETIF_F_LOOPBACK_BIT] =         "loopback",
 	[NETIF_F_RXFCS_BIT] =            "rx-fcs",
 	[NETIF_F_RXALL_BIT] =            "rx-all",
+	[NETIF_F_HW_L2FW_DOFFLOAD_BIT] = "l2-fwd-offload",
+	[NETIF_F_BUSY_POLL_BIT] =        "busy-poll",
 };
 
 static int ethtool_get_features(struct net_device *dev, void __user *useraddr)
@@ -278,11 +283,16 @@ static u32 __ethtool_get_flags(struct net_device *dev)
 {
 	u32 flags = 0;
 
-	if (dev->features & NETIF_F_LRO)	     flags |= ETH_FLAG_LRO;
-	if (dev->features & NETIF_F_HW_VLAN_CTAG_RX) flags |= ETH_FLAG_RXVLAN;
-	if (dev->features & NETIF_F_HW_VLAN_CTAG_TX) flags |= ETH_FLAG_TXVLAN;
-	if (dev->features & NETIF_F_NTUPLE)	     flags |= ETH_FLAG_NTUPLE;
-	if (dev->features & NETIF_F_RXHASH)	     flags |= ETH_FLAG_RXHASH;
+	if (dev->features & NETIF_F_LRO)
+		flags |= ETH_FLAG_LRO;
+	if (dev->features & NETIF_F_HW_VLAN_CTAG_RX)
+		flags |= ETH_FLAG_RXVLAN;
+	if (dev->features & NETIF_F_HW_VLAN_CTAG_TX)
+		flags |= ETH_FLAG_TXVLAN;
+	if (dev->features & NETIF_F_NTUPLE)
+		flags |= ETH_FLAG_NTUPLE;
+	if (dev->features & NETIF_F_RXHASH)
+		flags |= ETH_FLAG_RXHASH;
 
 	return flags;
 }
@@ -294,11 +304,16 @@ static int __ethtool_set_flags(struct net_device *dev, u32 data)
 	if (data & ~ETH_ALL_FLAGS)
 		return -EINVAL;
 
-	if (data & ETH_FLAG_LRO)	features |= NETIF_F_LRO;
-	if (data & ETH_FLAG_RXVLAN)	features |= NETIF_F_HW_VLAN_CTAG_RX;
-	if (data & ETH_FLAG_TXVLAN)	features |= NETIF_F_HW_VLAN_CTAG_TX;
-	if (data & ETH_FLAG_NTUPLE)	features |= NETIF_F_NTUPLE;
-	if (data & ETH_FLAG_RXHASH)	features |= NETIF_F_RXHASH;
+	if (data & ETH_FLAG_LRO)
+		features |= NETIF_F_LRO;
+	if (data & ETH_FLAG_RXVLAN)
+		features |= NETIF_F_HW_VLAN_CTAG_RX;
+	if (data & ETH_FLAG_TXVLAN)
+		features |= NETIF_F_HW_VLAN_CTAG_TX;
+	if (data & ETH_FLAG_NTUPLE)
+		features |= NETIF_F_NTUPLE;
+	if (data & ETH_FLAG_RXHASH)
+		features |= NETIF_F_RXHASH;
 
 	/* allow changing only bits set in hw_features */
 	changed = (features ^ dev->features) & ETH_ALL_FEATURES;
@@ -542,6 +557,23 @@ err_out:
 	return ret;
 }
 
+static int ethtool_copy_validate_indir(u32 *indir, void __user *useraddr,
+					struct ethtool_rxnfc *rx_rings,
+					u32 size)
+{
+	int ret = 0, i;
+
+	if (copy_from_user(indir, useraddr, size * sizeof(indir[0])))
+		ret = -EFAULT;
+
+	/* Validate ring indices */
+	for (i = 0; i < size; i++) {
+		if (indir[i] >= rx_rings->data)
+			ret = -EINVAL;
+	}
+	return ret;
+}
+
 static noinline_for_stack int ethtool_get_rxfh_indir(struct net_device *dev,
 						     void __user *useraddr)
 {
@@ -598,6 +630,7 @@ static noinline_for_stack int ethtool_set_rxfh_indir(struct net_device *dev,
 	u32 *indir;
 	const struct ethtool_ops *ops = dev->ethtool_ops;
 	int ret;
+	u32 ringidx_offset = offsetof(struct ethtool_rxfh_indir, ring_index[0]);
 
 	if (!ops->get_rxfh_indir_size || !ops->set_rxfh_indir ||
 	    !ops->get_rxnfc)
@@ -628,28 +661,196 @@ static noinline_for_stack int ethtool_set_rxfh_indir(struct net_device *dev,
 		for (i = 0; i < dev_size; i++)
 			indir[i] = ethtool_rxfh_indir_default(i, rx_rings.data);
 	} else {
-		if (copy_from_user(indir,
-				  useraddr +
-				  offsetof(struct ethtool_rxfh_indir,
-					   ring_index[0]),
-				  dev_size * sizeof(indir[0]))) {
-			ret = -EFAULT;
+		ret = ethtool_copy_validate_indir(indir,
+						  useraddr + ringidx_offset,
+						  &rx_rings,
+						  dev_size);
+		if (ret)
 			goto out;
-		}
-
-		/* Validate ring indices */
-		for (i = 0; i < dev_size; i++) {
-			if (indir[i] >= rx_rings.data) {
-				ret = -EINVAL;
-				goto out;
-			}
-		}
 	}
 
 	ret = ops->set_rxfh_indir(dev, indir);
 
 out:
 	kfree(indir);
+	return ret;
+}
+
+static noinline_for_stack int ethtool_get_rxfh(struct net_device *dev,
+					       void __user *useraddr)
+{
+	int ret;
+	const struct ethtool_ops *ops = dev->ethtool_ops;
+	u32 user_indir_size = 0, user_key_size = 0;
+	u32 dev_indir_size = 0, dev_key_size = 0;
+	u32 total_size;
+	u32 indir_offset, indir_bytes;
+	u32 key_offset;
+	u32 *indir = NULL;
+	u8 *hkey = NULL;
+	u8 *rss_config;
+
+	if (!(dev->ethtool_ops->get_rxfh_indir_size ||
+	      dev->ethtool_ops->get_rxfh_key_size) ||
+	      !dev->ethtool_ops->get_rxfh)
+		return -EOPNOTSUPP;
+
+	if (ops->get_rxfh_indir_size)
+		dev_indir_size = ops->get_rxfh_indir_size(dev);
+
+	indir_offset = offsetof(struct ethtool_rxfh, indir_size);
+
+	if (copy_from_user(&user_indir_size,
+			   useraddr + indir_offset,
+			   sizeof(user_indir_size)))
+		return -EFAULT;
+
+	if (copy_to_user(useraddr + indir_offset,
+			 &dev_indir_size, sizeof(dev_indir_size)))
+		return -EFAULT;
+
+	if (ops->get_rxfh_key_size)
+		dev_key_size = ops->get_rxfh_key_size(dev);
+
+	if ((dev_key_size + dev_indir_size) == 0)
+		return -EOPNOTSUPP;
+
+	key_offset = offsetof(struct ethtool_rxfh, key_size);
+
+	if (copy_from_user(&user_key_size,
+			   useraddr + key_offset,
+			   sizeof(user_key_size)))
+		return -EFAULT;
+
+	if (copy_to_user(useraddr + key_offset,
+			 &dev_key_size, sizeof(dev_key_size)))
+		return -EFAULT;
+
+	/* If the user buffer size is 0, this is just a query for the
+	 * device table size and key size.  Otherwise, if the User size is
+	 * not equal to device table size or key size it's an error.
+	 */
+	if (!user_indir_size && !user_key_size)
+		return 0;
+
+	if ((user_indir_size && (user_indir_size != dev_indir_size)) ||
+	    (user_key_size && (user_key_size != dev_key_size)))
+		return -EINVAL;
+
+	indir_bytes = user_indir_size * sizeof(indir[0]);
+	total_size = indir_bytes + user_key_size;
+	rss_config = kzalloc(total_size, GFP_USER);
+	if (!rss_config)
+		return -ENOMEM;
+
+	if (user_indir_size)
+		indir = (u32 *)rss_config;
+
+	if (user_key_size)
+		hkey = rss_config + indir_bytes;
+
+	ret = dev->ethtool_ops->get_rxfh(dev, indir, hkey);
+	if (!ret) {
+		if (copy_to_user(useraddr +
+				 offsetof(struct ethtool_rxfh, rss_config[0]),
+				 rss_config, total_size))
+			ret = -EFAULT;
+	}
+
+	kfree(rss_config);
+
+	return ret;
+}
+
+static noinline_for_stack int ethtool_set_rxfh(struct net_device *dev,
+					       void __user *useraddr)
+{
+	int ret;
+	const struct ethtool_ops *ops = dev->ethtool_ops;
+	struct ethtool_rxnfc rx_rings;
+	u32 user_indir_size = 0, dev_indir_size = 0, i;
+	u32 user_key_size = 0, dev_key_size = 0;
+	u32 *indir = NULL, indir_bytes = 0;
+	u8 *hkey = NULL;
+	u8 *rss_config;
+	u32 indir_offset, key_offset;
+	u32 rss_cfg_offset = offsetof(struct ethtool_rxfh, rss_config[0]);
+
+	if (!(ops->get_rxfh_indir_size || ops->get_rxfh_key_size) ||
+	    !ops->get_rxnfc || !ops->set_rxfh)
+		return -EOPNOTSUPP;
+
+	if (ops->get_rxfh_indir_size)
+		dev_indir_size = ops->get_rxfh_indir_size(dev);
+
+	indir_offset = offsetof(struct ethtool_rxfh, indir_size);
+	if (copy_from_user(&user_indir_size,
+			   useraddr + indir_offset,
+			   sizeof(user_indir_size)))
+		return -EFAULT;
+
+	if (ops->get_rxfh_key_size)
+		dev_key_size = dev->ethtool_ops->get_rxfh_key_size(dev);
+
+	if ((dev_key_size + dev_indir_size) == 0)
+		return -EOPNOTSUPP;
+
+	key_offset = offsetof(struct ethtool_rxfh, key_size);
+	if (copy_from_user(&user_key_size,
+			   useraddr + key_offset,
+			   sizeof(user_key_size)))
+		return -EFAULT;
+
+	/* If either indir or hash key is valid, proceed further.
+	 */
+	if ((user_indir_size && ((user_indir_size != 0xDEADBEEF) &&
+				 user_indir_size != dev_indir_size)) ||
+	    (user_key_size && (user_key_size != dev_key_size)))
+		return -EINVAL;
+
+	if (user_indir_size != 0xDEADBEEF)
+		indir_bytes = dev_indir_size * sizeof(indir[0]);
+
+	rss_config = kzalloc(indir_bytes + user_key_size, GFP_USER);
+	if (!rss_config)
+		return -ENOMEM;
+
+	rx_rings.cmd = ETHTOOL_GRXRINGS;
+	ret = ops->get_rxnfc(dev, &rx_rings, NULL);
+	if (ret)
+		goto out;
+
+	/* user_indir_size == 0 means reset the indir table to default.
+	 * user_indir_size == 0xDEADBEEF means indir setting is not requested.
+	 */
+	if (user_indir_size && user_indir_size != 0xDEADBEEF) {
+		indir = (u32 *)rss_config;
+		ret = ethtool_copy_validate_indir(indir,
+						  useraddr + rss_cfg_offset,
+						  &rx_rings,
+						  user_indir_size);
+		if (ret)
+			goto out;
+	} else if (user_indir_size == 0) {
+		indir = (u32 *)rss_config;
+		for (i = 0; i < dev_indir_size; i++)
+			indir[i] = ethtool_rxfh_indir_default(i, rx_rings.data);
+	}
+
+	if (user_key_size) {
+		hkey = rss_config + indir_bytes;
+		if (copy_from_user(hkey,
+				   useraddr + rss_cfg_offset + indir_bytes,
+				   user_key_size)) {
+			ret = -EFAULT;
+			goto out;
+		}
+	}
+
+	ret = ops->set_rxfh(dev, indir, hkey);
+
+out:
+	kfree(rss_config);
 	return ret;
 }
 
@@ -1319,16 +1520,35 @@ static int ethtool_get_dump_data(struct net_device *dev,
 	if (ret)
 		return ret;
 
-	len = (tmp.len > dump.len) ? dump.len : tmp.len;
+	len = min(tmp.len, dump.len);
 	if (!len)
 		return -EFAULT;
 
+	/* Don't ever let the driver think there's more space available
+	 * than it requested with .get_dump_flag().
+	 */
+	dump.len = len;
+
+	/* Always allocate enough space to hold the whole thing so that the
+	 * driver does not need to check the length and bother with partial
+	 * dumping.
+	 */
 	data = vzalloc(tmp.len);
 	if (!data)
 		return -ENOMEM;
 	ret = ops->get_dump_data(dev, &dump, data);
 	if (ret)
 		goto out;
+
+	/* There are two sane possibilities:
+	 * 1. The driver's .get_dump_data() does not touch dump.len.
+	 * 2. Or it may set dump.len to how much it really writes, which
+	 *    should be tmp.len (or len if it can do a partial dump).
+	 * In any case respond to userspace with the actual length of data
+	 * it's receiving.
+	 */
+	WARN_ON(dump.len != len && dump.len != tmp.len);
+	dump.len = len;
 
 	if (copy_to_user(useraddr, &dump, sizeof(dump))) {
 		ret = -EFAULT;
@@ -1413,7 +1633,7 @@ static int ethtool_get_module_eeprom(struct net_device *dev,
 				      modinfo.eeprom_len);
 }
 
-/* The main entry point in this file.  Called from net/core/dev.c */
+/* The main entry point in this file.  Called from net/core/dev_ioctl.c */
 
 int dev_ethtool(struct net *net, struct ifreq *ifr)
 {
@@ -1457,6 +1677,7 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_GRXCLSRULE:
 	case ETHTOOL_GRXCLSRLALL:
 	case ETHTOOL_GRXFHINDIR:
+	case ETHTOOL_GRSSH:
 	case ETHTOOL_GFEATURES:
 	case ETHTOOL_GCHANNELS:
 	case ETHTOOL_GET_TS_INFO:
@@ -1593,6 +1814,12 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 		break;
 	case ETHTOOL_SRXFHINDIR:
 		rc = ethtool_set_rxfh_indir(dev, useraddr);
+		break;
+	case ETHTOOL_GRSSH:
+		rc = ethtool_get_rxfh(dev, useraddr);
+		break;
+	case ETHTOOL_SRSSH:
+		rc = ethtool_set_rxfh(dev, useraddr);
 		break;
 	case ETHTOOL_GFEATURES:
 		rc = ethtool_get_features(dev, useraddr);

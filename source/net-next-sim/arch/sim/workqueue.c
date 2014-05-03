@@ -50,7 +50,7 @@ workqueue_function (void *context)
          struct work_struct *work = list_first_entry(&wq->list,
                                                      struct work_struct, entry);
          work_func_t f = work->func;
-         __list_del (work->entry.prev, work->entry.next);
+         list_del_init(&work->entry);
          work_clear_pending (work);
          f(work);
        }
@@ -96,7 +96,7 @@ bool queue_work_on(int cpu, struct workqueue_struct *wq,
 {
   int ret = 0;
 
-  if (!test_and_set_bit (WORK_STRUCT_PENDING, work_data_bits(work))) {
+  if (!test_and_set_bit (WORK_STRUCT_PENDING_BIT, work_data_bits(work))) {
       list_add_tail (&work->entry, &wq->list);
       sim_task_wakeup (workqueue_task (wq));
       ret = 1;
@@ -119,7 +119,7 @@ void flush_workqueue(struct workqueue_struct *wq)
 bool cancel_work_sync(struct work_struct *work)
 {
   int retval = 0;
-  if (!test_and_set_bit(WORK_STRUCT_PENDING, work_data_bits(work)))
+  if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)))
     {
       // work was not yet queued
       return 0;
@@ -144,7 +144,7 @@ bool queue_delayed_work_on(int cpu, struct workqueue_struct *wq,
       return queue_work (wq, work);
     }
 
-  if (!test_and_set_bit(WORK_STRUCT_PENDING, work_data_bits(work)))
+  if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)))
     {
       sim_assert (!timer_pending (timer));
       dwork->wq = wq;
@@ -161,13 +161,13 @@ bool mod_delayed_work_on(int cpu, struct workqueue_struct *wq,
 			 struct delayed_work *dwork, unsigned long delay)
 {
   del_timer (&dwork->timer);
+  __clear_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(&dwork->work));
   return queue_delayed_work(wq, dwork, delay);
 }
 bool cancel_delayed_work(struct delayed_work *dwork)
 {
   del_timer (&dwork->timer);
-  cancel_work_sync (&dwork->work);
-  return true;
+  return cancel_work_sync (&dwork->work);
 }
 
 struct workqueue_struct *__alloc_workqueue_key(const char *fmt,
@@ -219,12 +219,15 @@ err:
 }
 
 struct workqueue_struct *system_wq __read_mostly;
+struct workqueue_struct *system_power_efficient_wq __read_mostly;
 /* from linux/workqueue.h */
 #define system_nrt_wq			__system_nrt_wq()
 
 static int __init init_workqueues(void)
 {
   system_wq = alloc_workqueue("events", 0, 0);
+  system_power_efficient_wq = alloc_workqueue("events_power_efficient",
+                                              WQ_POWER_EFFICIENT, 0);
   return 0;
 }
 fs_initcall(init_workqueues);

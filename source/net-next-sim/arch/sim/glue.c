@@ -55,6 +55,7 @@ int overflowgid = 0;
 int overflowuid = 0;
 int fs_overflowgid = 0;
 int fs_overflowuid = 0;
+unsigned long sysctl_overcommit_kbytes __read_mostly;
 
 /* from kobject_uevent.c */
 char uevent_helper[UEVENT_HELPER_PATH_LEN] = "dummy-uevent";
@@ -64,6 +65,7 @@ int rcu_expedited;
 int sched_rr_timeslice = RR_TIMESLICE;
 /* from main.c */
 bool initcall_debug;
+bool static_key_initialized __read_mostly = false;
 
 unsigned long __raw_local_save_flags(void)
 {
@@ -78,16 +80,14 @@ void arch_local_irq_restore(unsigned long flags)
 	local_irqflags = flags;
 }
 
-int in_egroup_p(gid_t grp)
+int in_egroup_p(kgid_t grp)
 {
   // called from sysctl code. 
   sim_assert (false);
   return 0;
 }
 
-void local_bh_disable(void)
-{}
-void local_bh_enable(void)
+void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)
 {}
 
 unsigned long long nr_context_switches(void)
@@ -321,4 +321,10 @@ int sched_rr_handler(struct ctl_table *table, int write,
                      loff_t *ppos)
 {
   return 0;
+}
+
+void on_each_cpu_mask(const struct cpumask *mask,
+                      smp_call_func_t func, void *info, bool wait)
+{
+  return;
 }

@@ -1,5 +1,7 @@
 #include <linux/sysfs.h>
 #include <linux/kobject.h>
+#include "sim.h"
+#include "sim-assert.h"
 
 int sysfs_create_bin_file(struct kobject *kobj,
 			  const struct bin_attribute *attr)
@@ -10,11 +12,6 @@ void sysfs_remove_bin_file(struct kobject *kobj,
                            const struct bin_attribute *attr)
 {}
 int sysfs_create_dir(struct kobject *kobj)
-{
-  return 0;
-}
-int sysfs_create_file(struct kobject *kobj,
-		      const struct attribute *attr)
 {
   return 0;
 }
@@ -30,24 +27,20 @@ int sysfs_move_dir(struct kobject *kobj,
 }
 void sysfs_remove_dir(struct kobject *kobj)
 {}
-void sysfs_remove_file(struct kobject *kobj, const struct attribute *attr)
-{}
 void sysfs_remove_group(struct kobject *kobj,
                         const struct attribute_group *grp)
-{}
-void sysfs_remove_link(struct kobject *kobj, const char *name)
 {}
 int sysfs_rename_dir(struct kobject *kobj, const char *new_name)
 {
   return 0;
 }
-int sysfs_rename_link(struct kobject *k, struct kobject *t,
-                                    const char *old_name, const char *new_name)
+int __must_check sysfs_create_group(struct kobject *kobj,
+                                    const struct attribute_group *grp)
 {
   return 0;
 }
-int __must_check sysfs_create_group(struct kobject *kobj,
-                                    const struct attribute_group *grp)
+int sysfs_create_groups(struct kobject *kobj,
+			const struct attribute_group **groups)
 {
   return 0;
 }
@@ -63,3 +56,13 @@ void sysfs_exit_ns(enum kobj_ns_type type, const void *tag)
 {}
 void sysfs_notify(struct kobject *kobj, const char *dir, const char *attr)
 {}
+int sysfs_create_dir_ns(struct kobject *kobj, const void *ns)
+{
+  kobj->sd = sim_malloc (sizeof (struct kernfs_node));
+  return 0;
+}
+int sysfs_create_file_ns(struct kobject *kobj, const struct attribute *attr,
+                         const void *ns)
+{
+  return 0;
+}

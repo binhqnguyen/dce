@@ -100,14 +100,19 @@ static AsciiTraceHelper asciiTraceHelper;
 /**************NSC************/
 static std::string nsc_stack="liblinux2.6.26.so";
 //static std::string dce_stack="liblinux.so";
-static std::string dce_stack="libsim-linux3.10.0.so";
+//static std::string dce_stack="libsim-linux3.10.0.so";
+//static std::string dce_stack="libsim-linux3.12.0.so";
+static std::string dce_stack="libsim-linux3.15.0-rc1.so";
 static std::string TCP_VERSION="cubic"; //reno,westwood,vegas,veno,yeah,illinois,htcp,hybla 
 static std::string TCP_SACK = "1";
 static std::string TCP_TIMESTAMP = "1";
 static std::string TCP_WINDOWSCALING = "1";
 static std::string TCP_FRTO = "2";
 
-
+/*Nodes*/
+static Ptr<Node> remote_host;
+static Ptr<Node> ue;
+static Ptr<Node> enb;
 
 static void
 getTcpPut();
@@ -115,6 +120,7 @@ static void change_radio_bandwidth_at_time(std::string bandwidth, double time_of
 static void set_radio_bandwidth(std::string bandwidth);
 static void set_radio_delay(double delay);
 static void change_radio_delay_at_time(double delay, double time_of_change);
+static int execute_app_on_nodes();
 
 //static void change_link_bandwidth(double link_bd);
 

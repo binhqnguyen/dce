@@ -1,8 +1,8 @@
 6NET: Registered protocol family 16
 6NET: Registered protocol family 2
-6TCP established hash table entries: 256 (order: 0, 4096 bytes)
-6TCP bind hash table entries: 256 (order: -1, 2048 bytes)
-6TCP: Hash tables configured (established 256 bind 256)
+6TCP established hash table entries: 512 (order: 0, 4096 bytes)
+6TCP bind hash table entries: 512 (order: 0, 4096 bytes)
+6TCP: Hash tables configured (established 512 bind 512)
 6TCP: reno registered
 6UDP hash table entries: 128 (order: 0, 4096 bytes)
 6UDP-Lite hash table entries: 128 (order: 0, 4096 bytes)
@@ -16,4 +16,3 @@
 6DCCP: Activated CCID 2 (TCP-like)
 6DCCP: Activated CCID 3 (TCP-Friendly Rate Control)
 6nsc: Hash tables configured (established 512 bind 512)
-3TCP: TFO aes cipher alloc error: -2
